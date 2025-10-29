@@ -94,9 +94,10 @@ while True:
         response = getServerResponse(request)
 
     else:
-        response_string = cache.check_cache(request_string)
-        if response_string:
-            if isinstance(response_string, str):
+        response_object = cache.check_cache(request_string)
+        if response_object:
+            if isinstance(response_object, str):
+                response_string = "HTTP/1.1 200 OK\n\n" + response_object
                 response = response_string.encode("utf-8")
         else:
             response = getServerResponse(request)
