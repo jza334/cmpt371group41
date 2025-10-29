@@ -45,7 +45,7 @@ while True:
             client_time = parsedate_to_datetime(headers["If-Modified-Since"]).timestamp()
             file_time = os.path.getmtime(filepath)
             if file_time <= client_time:
-                response = "HTTP/1.1 304 Not Modified\n\n"
+                response = "HTTP/1.1 304 Not Modified\n\n" + content
             # 200 
             else:
                 with open(filepath, 'r') as file:
