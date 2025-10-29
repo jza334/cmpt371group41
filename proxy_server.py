@@ -139,7 +139,7 @@ while True:
     
     if isinstance(response, str):
         response = response.encode("utf-8")
-    print(response.decode("utf-8"))
+    
     client_conn.sendall(response)
     client_conn.close()
     
