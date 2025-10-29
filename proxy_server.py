@@ -125,6 +125,7 @@ while True:
         if response_content:
             if isinstance(response_content, str):
                 response_string = "HTTP/1.1 200 OK\n\n" + response_content
+                response = response_string.encode("utf-8")
         else:
             response = getServerResponse(request)
 
