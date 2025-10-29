@@ -88,14 +88,12 @@ def getServerResponse(request):
 
 cache = Cache(2)
 
-while True:
-    #accept connection and get client request
-    client_conn, client_addr = proxy_socket.accept()
+def client_handler(client_conn):
     request = client_conn.recv(1024)
 
     if not request:
         client_conn.close()
-        continue
+        return
 
     # Convert byte form
     request_string = request.decode("utf-8")
@@ -105,7 +103,7 @@ while True:
     request_line = lines[0].split()
     if len(request_line) < 3:
         client_conn.close()
-        continue
+        return
     method, path, version = request_line
     headers = {l.split(": ")[0]: l.split(": ")[1] for l in lines[1:] if ": " in l} #make dictionary for easy access to hearer info
 
@@ -145,3 +143,8 @@ while True:
     client_conn.sendall(response)
     client_conn.close()
     
+while True:
+    #accept connection and get client request
+    client_conn, client_addr = proxy_socket.accept()
+    new_thread = Thread(target=client_handler, args=(client_conn,))
+    new_thread.start()
