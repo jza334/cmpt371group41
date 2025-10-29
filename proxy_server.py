@@ -81,67 +81,79 @@ class Cache:
 def getServerResponse(request):
     proxy_to_server_socket = socket(AF_INET, SOCK_STREAM)
     proxy_to_server_socket.connect((SERVER_HOST, SERVER_PORT))
-    proxy_to_server_socket.send(request)
-    response = proxy_to_server_socket.recv(1024)
+    proxy_to_server_socket.sendall(request)
+
+    response = b""
+    while True:
+        frame = proxy_to_server_socket.recv(1024)
+        if not frame:
+            break
+        response += frame
+
     proxy_to_server_socket.close()
     return response
 
 cache = Cache(2)
 
 def client_handler(client_conn):
-    request = client_conn.recv(1024)
+    try:
+        request = client_conn.recv(1024)
 
-    if not request:
-        client_conn.close()
-        return
+        if not request:
+            client_conn.close()
+            return
 
-    # Convert byte form
-    request_string = request.decode("utf-8")
+        # Convert byte form
+        request_string = request.decode("utf-8")
 
-    # parse request
-    lines = request_string.split("\n")
-    request_line = lines[0].split()
-    if len(request_line) < 3:
-        client_conn.close()
-        return
-    method, path, version = request_line
-    headers = {l.split(": ")[0]: l.split(": ")[1] for l in lines[1:] if ": " in l} #make dictionary for easy access to hearer info
+        # parse request
+        lines = request_string.split("\n")
+        request_line = lines[0].split()
+        if len(request_line) < 3:
+            client_conn.close()
+            return
+        method, path, version = request_line
+        headers = {l.split(": ")[0]: l.split(": ")[1] for l in lines[1:] if ": " in l} #make dictionary for easy access to hearer info
 
-    # 505 logic
-    if version != "HTTP/1.1":
-        response = "HTTP/1.1 505 HTTP Version Not Supported\n\n"
-    elif "If-Modified-Since" in headers:
-        response = getServerResponse(request)
-        response_string = response.decode("utf-8")
-
-        target = request_string.split("\n")[0]
-        content = response_string.split("\n\n",1)[1]
-        
-        cache.replace304(target, content)
-    else:
-        response_content = cache.check_cache(request_string)
-        if response_content:
-            if isinstance(response_content, str):
-                response_string = "HTTP/1.1 200 OK\n\n" + response_content
-                response = response_string.encode("utf-8")
-        else:
+        # 505 logic
+        if version != "HTTP/1.1":
+            response = "HTTP/1.1 505 HTTP Version Not Supported\n\n"
+        elif "If-Modified-Since" in headers:
             response = getServerResponse(request)
-
             response_string = response.decode("utf-8")
-            response_code = response_string.split("\n")[0].split(" ")[1]
 
-            if response_code in ["403", "404", "505"]:
-                pass
-            elif response_code == "200":
-                content = response_string.split("\n\n",1)[1]
-                cache.set(request_string, content)
+            target = request_string.split("\n")[0]
+            content = response_string.split("\n\n",1)[1]
+            
+            cache.replace304(target, content)
+        else:
+            response_content = cache.check_cache(request_string)
+            if response_content:
+                if isinstance(response_content, str):
+                    response_string = "HTTP/1.1 200 OK\n\n" + response_content
+                    response = response_string.encode("utf-8")
+            else:
+                response = getServerResponse(request)
 
-    
-    if isinstance(response, str):
-        response = response.encode("utf-8")
-    
-    client_conn.sendall(response)
-    client_conn.close()
+                response_string = response.decode("utf-8")
+                response_code = response_string.split("\n")[0].split(" ")[1]
+
+                if response_code in ["403", "404", "505"]:
+                    pass
+                elif response_code == "200":
+                    content = response_string.split("\n\n",1)[1]
+                    cache.set(request_string, content)
+
+        
+        if isinstance(response, str):
+            response = response.encode("utf-8")
+        
+        client_conn.sendall(response)
+        client_conn.close()
+
+    except Exception as e:
+        print("Error:", e)
+        client_conn.close()
     
 while True:
     #accept connection and get client request
