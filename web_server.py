@@ -1,4 +1,5 @@
 import socket
+from threading import *
 import os
 from email.utils import parsedate_to_datetime
 
@@ -11,20 +12,18 @@ server_socket.bind((HOST, PORT))
 server_socket.listen()
 print(f"Web server running on http://localhost:{PORT}...")
 
-while True:
-    #accept connection and get client request
-    client_conn, client_addr = server_socket.accept()
+def client_handler(client_conn):
     request = client_conn.recv(1024).decode("utf-8")
     if not request:
         client_conn.close()
-        continue
+        return
 
     #parse request
     lines = request.split("\n")
     request_line = lines[0].split()
     if len(request_line) < 3:
         client_conn.close()
-        continue
+        return
     method, path, version = request_line
     headers = {l.split(": ")[0]: l.split(": ")[1] for l in lines[1:] if ": " in l} #make dictionary for easy access to hearer info
 
@@ -63,3 +62,11 @@ while True:
         response = response.encode("utf-8")
     client_conn.sendall(response)
     client_conn.close()
+
+while True:
+    #accept connection and get client request
+    client_conn, client_addr = server_socket.accept()
+
+    new_thread = Thread(target=client_handler, args=(client_conn,))
+    print("Thread created. ")
+    new_thread.start()
