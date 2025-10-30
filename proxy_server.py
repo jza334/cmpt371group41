@@ -20,63 +20,70 @@ class Cache:
         self.max_size = max_size
         self.cache = dict()
         self.keyNum = 0
+        self.thread_lock = RLock()
 
     # This function takes in a request, and searches to see if the request is in the cache. If 
     # the request is in the cache, the LRU indicator is updated, then the content is returned.
     # Otherwise, None is returned.
     def check_cache(self, target):
-        for key, value in self.cache.items():
-            request, content = value
-            if target == request:
-                print("Cache hit!\n")
-                self._replace(key, request, content)
-                return content
-        print("Cache Miss!\n")
-        return None
+        with self.thread_lock:
+            for key, value in self.cache.items():
+                request, content = value
+                if target == request:
+                    print("Cache hit!\n")
+                    self._replace(key, request, content)
+                    return content
+            print("Cache Miss!\n")
+            return None
     
     # This functions takes in a request and a content, and stores it in the cache. If the cache
     # is full, the least recently used element is evicted. 
     def set(self, request, content):
-        if (len(self.cache) >= self.max_size):
-            self._evict()    
-        self.cache[self.keyNum] = (request, content)
-        self.keyNum += 1
+        with self.thread_lock:
+            if (len(self.cache) >= self.max_size):
+                self._evict()    
+            self.cache[self.keyNum] = (request, content)
+            self.keyNum += 1
 
     def _evict(self):
-        keys = self.cache.keys()
-        min_key = min(keys)
-        self.cache.pop(min_key)
+        with self.thread_lock:
+            keys = self.cache.keys()
+            min_key = min(keys)
+            self.cache.pop(min_key)
 
     # This function takes a key, request and content, and updates the LRU value for the entry.
     def _replace(self, key, request, content):
-        request, content = self.cache.pop(key)
-        self.set(request, content)
+        with self.thread_lock:
+            request, content = self.cache.pop(key)
+            self.set(request, content)
 
     # This function takes in a target request, and searches through the cache to try and find a 
     # request that is *matching*. In this context, matching refers to having the same values 
     # without the headers. If a match is found, the LRU value is updated. Otherwise, the request
     # is added to the cache. 
     def replace304(self, target, tContent):
-        replaced = False
-        for key, value in cache.cache.items():
-            request, content = value
-            stripped = request.split("\n")[0]
-            if stripped == target:
-                self._replace(key, target, content)
-                replaced = True
-                break
-        if replaced == False:
-            self.set(target, tContent)
+        with self.thread_lock:
+            replaced = False
+            for key, value in cache.cache.items():
+                request, content = value
+                stripped = request.split("\n")[0]
+                if stripped == target:
+                    self._replace(key, target, content)
+                    replaced = True
+                    break
+            if replaced == False:
+                self.set(target, tContent)
 
     # for debugging
     def print(self):
-        print(f"Cache size: {len(self.cache)}")
-        for key, value in self.cache.items():
-            if isinstance(value, tuple) and len(value) == 2:
-                request, content = value
-                print(f"{key}: \n{request} \n{content} \n")
-            else:
-                print(f"Unexpected value format for key {key}: {len(value)}")
+        with self.thread_lock:
+            print(f"Cache size: {len(self.cache)}")
+            for key, value in self.cache.items():
+                if isinstance(value, tuple) and len(value) == 2:
+                    request, content = value
+                    print(f"{key}: \n{request} \n{content} \n")
+                else:
+                    print(f"Unexpected value format for key {key}: {len(value)}")
 
 def getServerResponse(request):
     proxy_to_server_socket = socket(AF_INET, SOCK_STREAM)
