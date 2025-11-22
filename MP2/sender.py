@@ -6,6 +6,7 @@ import struct
 #host/port
 HOST = "localhost"
 PORT = 1234
+
 #globals
 PACKET_HEADER = "!IIHH"  #seq, ack, flags, window I=4bytes H=2bytes
 MAX_PAYLOAD = 1024
@@ -130,6 +131,7 @@ if __name__ == "__main__":
     threading.Thread(target=sender.handle_retransmit, daemon=True).start()
     threading.Thread(target=sender.handle_ack, daemon=True).start()
 
+    #send 8 packets (can change range to change amount of packets)
     for i in range(1, 9):
         message = f"Message number {i}".encode()
         sender.send_data(message)
