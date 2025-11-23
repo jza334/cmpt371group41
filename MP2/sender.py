@@ -5,7 +5,7 @@ import struct
 import random
 
 #host/port
-HOST = "localhost"
+HOST = "192.168.109.128"
 PORT = 1234
 
 #globals
@@ -149,17 +149,25 @@ class PRTPSender:
         self.sock.settimeout(None)
 
 if __name__ == "__main__":
+    start_time = time.time()
     sender = PRTPSender(HOST, PORT)
     sender.connect()
 
     threading.Thread(target=sender.handle_retransmit, daemon=True).start()
     threading.Thread(target=sender.handle_ack, daemon=True).start()
 
-    #send 8 packets
-    for i in range(1, 9):
+    #send packets
+    bytes_sent = 0
+    for i in range(1, 1000):
         message = f"Message number {i}".encode()
         sender.send_data(message)
+        bytes_sent += len(message)
         time.sleep(0.01)
 
     time.sleep(2)
+    # Later, calculate throughput
+    end_time = time.time()
+    duration = end_time - start_time
+    throughput_mbps = (bytes_sent * 8) / duration
+    print(f"Approximate throughput: {throughput_mbps:.3f} bps")
     sender.close()
