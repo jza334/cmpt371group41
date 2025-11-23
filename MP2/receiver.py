@@ -27,17 +27,21 @@ def make_packet(seq, ack, flags, window, payload=b''):
     header = struct.pack(PACKET_HEADER, seq, ack, flags, window)
     return header + payload
 
+#per-client connection state
+class ClientState:
+    def __init__(self):
+        self.expected_seq = 1
+        self.window = 16
+        self.connected = False
+        self.buffer = {}  #seq -> payload
+        self.drop = 0
+
 #PRTP Receiver
 class PRTPReceiver:
     def __init__(self, port):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(('', port))
-        self.expected_seq = 1
-        self.window = 16
-        self.client_addr = None
-        self.connected = False
-        self.buffer = {}  # seq -> payload
-        self.drop = 0
+        self.clients = {}  #addr -> ClientState
 
     def start(self):
         print(f"Receiver running on http://{HOST}:{PORT}...")
@@ -45,58 +49,64 @@ class PRTPReceiver:
             data, addr = self.sock.recvfrom(2048)
             seq, ack, flags, window, payload = parse_packet(data)
 
+            #get or create client state
+            if addr not in self.clients:
+                self.clients[addr] = ClientState()
+            client = self.clients[addr]
+
             #connection establishment
-            if not self.connected:
+            if not client.connected:
                 if flags & FLAG_SYN:
-                    print("[Receiver] Received SYN, sending SYN+ACK")
-                    self.client_addr = addr
-                    syn_ack = make_packet(0, seq+1, FLAG_SYN | FLAG_ACK, self.window)
+                    print(f"[Receiver] Received SYN, sending SYN+ACK")
+                    syn_ack = make_packet(0, seq+1, FLAG_SYN | FLAG_ACK, client.window)
                     self.sock.sendto(syn_ack, addr)
-                    print("[Receiver] SYN+ACK sent")
+                    print(f"[Receiver] SYN+ACK sent")
                 elif flags & FLAG_ACK:
-                    self.connected = True
-                    self.expected_seq = 1
-                    print("[Receiver] Connection established with client")
+                    client.connected = True
+                    client.expected_seq = 1
+                    print(f"[Receiver] Connection established with client")
                 continue
 
             #FIN handling
             if flags & FLAG_FIN:
-                ack_pkt = make_packet(0, seq+1, FLAG_ACK, self.window)
+                ack_pkt = make_packet(0, seq+1, FLAG_ACK, client.window)
                 self.sock.sendto(ack_pkt, addr)
-                print("[Receiver] Received FIN, sent ACK, closing connection")
-                break
+                print(f"[Receiver] Received FIN, sent ACK, closing connection")
+                del self.clients[addr]
+                continue
 
             #data handling
-            if seq >= self.expected_seq:
-                if seq == self.expected_seq:
+            if seq >= client.expected_seq:
+                if seq == client.expected_seq:
                     #in-order packet
                     print(f"[Receiver] Received seq={seq}, payload={payload}")
-                    self.expected_seq += 1
+                    client.expected_seq += 1
 
                     #deliver buffered in-order packets
-                    while self.expected_seq in self.buffer:
-                        self.buffer.pop(self.expected_seq)
-                        self.expected_seq += 1
+                    while client.expected_seq in client.buffer:
+                        print(f"[Receiver] Delivered buffered seq={client.expected_seq}")
+                        client.buffer.pop(client.expected_seq)
+                        client.expected_seq += 1
                 else:
-                    #out-of-order buffer it
+                    # out-of-order buffer it
                     if random.random() < LOSS_PROB:
-                        self.drop = 1
-                    if self.drop == 0:
-                        self.buffer[seq] = payload
+                        client.drop = 1
+                    if client.drop == 0:
+                        client.buffer[seq] = payload
                         print(f"[Receiver] Buffered out-of-order seq={seq}, payload={payload}")
 
             #send ACK with SACK info
-            if self.buffer:
-                sack_payload = ",".join(str(s) for s in self.buffer.keys()).encode()
+            if client.buffer:
+                sack_payload = ",".join(str(s) for s in client.buffer.keys()).encode()
             else:
                 sack_payload = b''
-            ack_pkt = make_packet(0, self.expected_seq, FLAG_ACK, self.window, sack_payload)
-            if self.drop == 1:
+            ack_pkt = make_packet(0, client.expected_seq, FLAG_ACK, client.window, sack_payload)
+            if client.drop == 1:
                 print(f"[Receiver] Simulating loss of ACK for seq={seq}")
             else:
                 self.sock.sendto(ack_pkt, addr)
-                print(f"[Receiver] Sent ACK for seq={seq} with SACK={list(self.buffer.keys())}")
-            self.drop = 0
+                print(f"[Receiver] Sent ACK for seq={seq} with SACK={list(client.buffer.keys())}")
+            client.drop = 0
 
 if __name__ == "__main__":
     receiver = PRTPReceiver(PORT)
