@@ -159,6 +159,7 @@ if __name__ == "__main__":
     for i in range(1, 9):
         message = f"Message number {i}".encode()
         sender.send_data(message)
+        time.sleep(0.01)
 
     time.sleep(2)
     sender.close()
