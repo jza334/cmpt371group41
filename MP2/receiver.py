@@ -1,5 +1,6 @@
 import socket
 import struct
+import random
 
 #host/port
 HOST = "localhost"
@@ -11,6 +12,10 @@ MAX_PAYLOAD = 1024
 FLAG_SYN = 0x1
 FLAG_ACK = 0x2
 FLAG_FIN = 0x4
+
+#simulate error / loss
+LOSS_PROB = 0.1
+ERROR_PROB = 0.1
 
 def parse_packet(packet):
     header = packet[:12]
@@ -32,6 +37,7 @@ class PRTPReceiver:
         self.client_addr = None
         self.connected = False
         self.buffer = {}  # seq -> payload
+        self.drop = 0
 
     def start(self):
         print(f"Receiver running on http://{HOST}:{PORT}...")
@@ -69,13 +75,15 @@ class PRTPReceiver:
 
                     #deliver buffered in-order packets
                     while self.expected_seq in self.buffer:
-                        buffered_payload = self.buffer.pop(self.expected_seq)
-                        print(f"[Receiver] Delivered buffered seq={self.expected_seq}, payload={buffered_payload}")
+                        self.buffer.pop(self.expected_seq)
                         self.expected_seq += 1
                 else:
                     #out-of-order buffer it
-                    self.buffer[seq] = payload
-                    print(f"[Receiver] Buffered out-of-order seq={seq}, payload={payload}")
+                    if random.random() < LOSS_PROB:
+                        self.drop = 1
+                    if self.drop == 0:
+                        self.buffer[seq] = payload
+                        print(f"[Receiver] Buffered out-of-order seq={seq}, payload={payload}")
 
             #send ACK with SACK info
             if self.buffer:
@@ -83,8 +91,12 @@ class PRTPReceiver:
             else:
                 sack_payload = b''
             ack_pkt = make_packet(0, self.expected_seq, FLAG_ACK, self.window, sack_payload)
-            self.sock.sendto(ack_pkt, addr)
-            print(f"[Receiver] Sent ACK for seq={self.expected_seq-1} with SACK={list(self.buffer.keys())}")
+            if self.drop == 1:
+                print(f"[Receiver] Simulating loss of ACK for seq={seq}")
+            else:
+                self.sock.sendto(ack_pkt, addr)
+                print(f"[Receiver] Sent ACK for seq={seq} with SACK={list(self.buffer.keys())}")
+            self.drop = 0
 
 if __name__ == "__main__":
     receiver = PRTPReceiver(PORT)
