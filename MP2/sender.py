@@ -2,6 +2,7 @@ import socket
 import threading
 import time
 import struct
+import random
 
 #host/port
 HOST = "localhost"
@@ -14,6 +15,10 @@ FLAG_SYN = 0x1
 FLAG_ACK = 0x2
 FLAG_FIN = 0x4
 TIMEOUT = 1
+
+#simulate error / loss
+LOSS_PROB = 0.1
+ERROR_PROB = 0.1
 
 def make_packet(seq, ack, flags, window, payload=b''):
     header = struct.pack(PACKET_HEADER, seq, ack, flags, window)
@@ -62,6 +67,22 @@ class PRTPSender:
         for i in range(0, len(data), MAX_PAYLOAD):
             chunk = data[i:i+MAX_PAYLOAD]
             packet = make_packet(self.seq, 0, 0, self.window, chunk)
+            #simulate loss
+            if random.random() < LOSS_PROB:
+                print(f"[Sender] Simulating loss of seq={self.seq}")
+                #skip sending this packet
+                with self.lock:
+                    self.unacked[self.seq] = (packet, time.time())  #still track for retransmission
+                self.seq += 1
+                continue
+            #simulate error
+            if random.random() < ERROR_PROB:
+                print(f"[Sender] Simulating error of seq={self.seq}")
+                #skip sending this packet
+                with self.lock:
+                    self.unacked[self.seq] = (packet, time.time())  #still track for retransmission
+                self.seq += 1
+                continue
             self.sock.sendto(packet, self.server_addr)
             print(f"[Sender] Sent seq={self.seq}, {len(chunk)} bytes")
             with self.lock:
@@ -87,13 +108,23 @@ class PRTPSender:
     def handle_ack(self):
         while True:
             data, _ = self.sock.recvfrom(2048)
-            seq, ack, flags, window, _ = parse_packet(data)
+            seq, ack, flags, window, payload = parse_packet(data)
             if flags & FLAG_ACK:
                 with self.lock:
-                    to_delete = [s for s in self.unacked if s < ack]
+                    #remove all packets <= ack-1
+                    to_delete = [s for s in self.unacked if s <= ack-1]
                     for s in to_delete:
                         del self.unacked[s]
                         print(f"[Sender] Received ACK for seq={s}")
+
+                    #remove packets reported in ACK
+                    if payload:
+                        sack_seqs = [int(x) for x in payload.decode().split(',')]
+                        for s in sack_seqs:
+                            if s in self.unacked:
+                                del self.unacked[s]
+                                print(f"[Sender] ACKed seq={s}")
+
                 #congestion control
                 if self.cwnd < self.ssthresh:
                     self.cwnd += 1
@@ -101,6 +132,7 @@ class PRTPSender:
                 else:
                     self.cwnd += 1 / self.cwnd
                     print(f"[Sender] cwnd increased to {self.cwnd}")
+
 
     #close connection
     def close(self):
@@ -131,7 +163,7 @@ if __name__ == "__main__":
     threading.Thread(target=sender.handle_retransmit, daemon=True).start()
     threading.Thread(target=sender.handle_ack, daemon=True).start()
 
-    #send 8 packets (can change range to change amount of packets)
+    #send 8 packets
     for i in range(1, 9):
         message = f"Message number {i}".encode()
         sender.send_data(message)
