@@ -75,14 +75,6 @@ class PRTPSender:
                     self.unacked[self.seq] = (packet, time.time())  #still track for retransmission
                 self.seq += 1
                 continue
-            #simulate error
-            if random.random() < ERROR_PROB:
-                print(f"[Sender] Simulating error of seq={self.seq}")
-                #skip sending this packet
-                with self.lock:
-                    self.unacked[self.seq] = (packet, time.time())  #still track for retransmission
-                self.seq += 1
-                continue
             self.sock.sendto(packet, self.server_addr)
             print(f"[Sender] Sent seq={self.seq}, {len(chunk)} bytes")
             with self.lock:
@@ -115,7 +107,7 @@ class PRTPSender:
                     to_delete = [s for s in self.unacked if s <= ack-1]
                     for s in to_delete:
                         del self.unacked[s]
-                        print(f"[Sender] Received ACK for seq={s}")
+                        print(f"[Sender] ACKed seq={s}")
 
                     #remove packets reported in ACK
                     if payload:
